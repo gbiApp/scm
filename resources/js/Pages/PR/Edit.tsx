@@ -79,7 +79,7 @@ const Edit = ({
   const [itemDetails, setItemDetails] = useState([]);
   const [files, setFiles] = useState([]);
   const [isMaterialRefreshing, setIsMaterialRefreshing] = useState(false);
-  const isBuyerPlanner = can(auth.user, PermissionsEnum.BuyerPlanner);
+  const isBuyerPlanner = can(auth.user, PermissionsEnum.ReworkPROnPO);
   const approverGrpId = auth.user.approvers
     .filter((approver) => approver.type === 'pr')
     .map((approver) => approver.plant + approver.seq + approver.prctrl_grp_id);
@@ -559,7 +559,7 @@ const Edit = ({
                 <Approval p_pr_number={data.pr_number} p_type={STATUS_APPROVED} p_title="approve" p_disable={disableButton} />
               )}
 
-              {(can(auth.user, PermissionsEnum.ApproverPR) || can(auth.user, PermissionsEnum.BuyerPlanner)) && (
+              {(can(auth.user, PermissionsEnum.ApproverPR) || can(auth.user, PermissionsEnum.ReworkPROnPO)) && (
                 <Approval p_pr_number={data.pr_number} p_type={STATUS_REWORK} p_title="rework" p_disable={disableButton || hasAnyPO} />
               )}
 
