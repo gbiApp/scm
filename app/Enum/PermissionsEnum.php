@@ -24,4 +24,5 @@ enum PermissionsEnum: string
     case ApproverGR = 'approver.gr';
     case CancelGR   = 'cancel.gr';
     case Admin      = 'admin';
+    case BuyerPlanner = 'buyer.planner';
 }

@@ -81,7 +81,7 @@ class PRController extends Controller
         return Inertia::render('PR/Index', [
             'pr_header'   => PRHeaderResource::collection($pr_header),
             'queryParams' => $request->query() ?: null,
-            'message'     => ['success' => session('success'), 'error' => session('error')],
+            'message'     => ['success' => session('success'), 'error' => session('error') , 'warning' => session('warning')],
         ]);
     }
 
@@ -341,123 +341,176 @@ class PRController extends Controller
 
     public function approve(Request $request)
     {
-        $pr_header = PrHeader::with([
-            'createdBy',
-            'workflows',
-            'attachments',
-            'prmaterials' => fn ($query) => $query->whereNull('status')->orWhere('status', ''),
-            'plants',
-            'prmaterials.materialGroups',
-        ])
-            ->where('pr_number', $request->pr_number)
-            ->first();
+      try {
+            DB::transaction(function () use ($request) {
+                    $pr_header = PrHeader::with([
+                    'createdBy',
+                    'workflows',
+                    'attachments',
+                    'prmaterials' => fn ($query) => $query->whereNull('status')->orWhere('status', ''),
+                    'plants',
+                    'prmaterials.materialGroups',
+                ])
+                    ->where('pr_number', $request->pr_number)
+                    ->first();
 
-        $approver = Approvers::with('user')
-            ->where('user_id', Auth::user()->id)
-            ->where('plant', $pr_header->plant)
-            ->where('type', Approvers::TYPE_PR)
-            ->where('prctrl_grp_id', $pr_header->prmaterials->first()->prctrl_grp_id)
-            ->first();
-
-        $email_status = 0;
-        if ($request->input('type') == ApproveStatus::APPROVED) {
-
-            if ($pr_header->total_pr_value > $approver->amount_to) {
-                $pr_header->appr_seq += 1;
-                $approver_2nd = Approvers::with('user')
-                    ->where('seq', $pr_header->appr_seq)
+                $approver = Approvers::with('user')
+                    ->where('user_id', Auth::user()->id)
                     ->where('plant', $pr_header->plant)
                     ->where('type', Approvers::TYPE_PR)
                     ->where('prctrl_grp_id', $pr_header->prmaterials->first()->prctrl_grp_id)
                     ->first();
-                $pr_header->status = $approver_2nd->desc;
-                $pr_header->seq    = HeaderSeq::ForApproval->value;
-                $email_status      = 1;
-            } elseif (
-                $pr_header->total_pr_value >= $approver->amount_from
-                && $pr_header->total_pr_value <= $approver->amount_to
-            ) {
-                $pr_header->status       = ApproveStatus::APPROVED;
-                $pr_header->release_date = Carbon::now()->format('Y-m-d H:i:s');
-                $pr_header->seq          = HeaderSeq::Approved->value;
-                $email_status            = 2;
-            }
-        } else {
-            $pr_header->status   = Str::ucfirst($request->input('type'));
-            $pr_header->appr_seq = $request->input('type') == ApproveStatus::REWORKED ? 0 : -1;
-            $pr_header->seq      = $request->input('type') == ApproveStatus::REWORKED ? HeaderSeq::Draft->value : HeaderSeq::Cancelled->value;
-            $approver_status     = ApproveStatus::where('seq', '!=', $approver->seq)
-                ->where('pr_number', $pr_header->pr_number)
-                ->whereNull('user_id')
-                ->delete();
-            $email_status = 3;
+
+                $email_status = 0;
+                if ($request->input('type') == ApproveStatus::APPROVED) {
+
+                    if ($pr_header->total_pr_value > $approver->amount_to) {
+                        $pr_header->appr_seq += 1;
+                        $approver_2nd = Approvers::with('user')
+                            ->where('seq', $pr_header->appr_seq)
+                            ->where('plant', $pr_header->plant)
+                            ->where('type', Approvers::TYPE_PR)
+                            ->where('prctrl_grp_id', $pr_header->prmaterials->first()->prctrl_grp_id)
+                            ->first();
+                        $pr_header->status = $approver_2nd->desc;
+                        $pr_header->seq    = HeaderSeq::ForApproval->value;
+                        $email_status      = 1;
+                    } elseif (
+                        $pr_header->total_pr_value >= $approver->amount_from
+                        && $pr_header->total_pr_value <= $approver->amount_to
+                    ) {
+                        $pr_header->status       = ApproveStatus::APPROVED;
+                        $pr_header->release_date = Carbon::now()->format('Y-m-d H:i:s');
+                        $pr_header->seq          = HeaderSeq::Approved->value;
+                        $email_status            = 2;
+                    }
+                } else {
+                    if (Auth::user()->hasRole(RolesEnum::BuyerPlanner->value)) {
+                        $pr_header->status = ApproveStatus::REWORKED;
+                        $pr_header->seq    = HeaderSeq::Draft->value;
+                        $pr_header->save();
+
+                        ApproveStatus::where('pr_number', $pr_header->pr_number)->delete();
+
+                        $approver_status = new ApproveStatus();
+                        $approver_status->pr_number     = $pr_header->pr_number;
+                        $approver_status->status        = ApproveStatus::REWORKED;
+                        $approver_status->approved_by   = Auth::user()->name;
+                        $approver_status->user_id       = Auth::id();
+                        $approver_status->position      = RolesEnum::BuyerPlanner->value;
+                        $approver_status->message       = $request->input('message');
+                        $approver_status->approved_date = now();
+                        $approver_status->seq           = 0;
+                        $approver_status->save();
+                    } else {
+                        $pr_header->status   = Str::ucfirst($request->input('type'));
+                        $pr_header->appr_seq = $request->input('type') == ApproveStatus::REWORKED ? 0 : -1;
+                        $pr_header->seq      = $request->input('type') == ApproveStatus::REWORKED ? HeaderSeq::Draft->value : HeaderSeq::Cancelled->value;
+                        $approver_status     = ApproveStatus::where('seq', '!=', $approver->seq)
+                                ->where('pr_number', $pr_header->pr_number)
+                                ->whereNull('user_id')
+                                ->delete();
+                    }
+
+                    $pr_header->save();
+                    $email_status = 3;
+                }
+
+                $pr_header->save();
+                if ($approver) {
+                    $approver_status = ApproveStatus::where('seq', $approver->seq)
+                        ->where('pr_number', $pr_header->pr_number)
+                        ->whereNull('user_id')
+                        ->first();
+                    if (! $approver_status) {
+                        throw new \Exception(sprintf(
+                            "PR %s has already been %s.",
+                            $pr_header->pr_number,
+                            Str::ucfirst($request->input('type'))
+                        ));
+                    }
+                    $approver_status->status        = Str::ucfirst($request->input('type'));
+                    $approver_status->approved_by   = Auth::user()->name;
+                    $approver_status->user_id       = Auth::user()->id;
+                    $approver_status->message       = $request->input('message');
+                    $approver_status->approved_date = now();
+                    $approver_status->save();
+
+                    $pr_header->load('workflows');
+                }
+                /**
+                 * Send email notification
+                 */
+                switch ($email_status) {
+                    case 1:
+                        Mail::to($approver_2nd->user->email)
+                            ->send(new PrForApprovalEmail(
+                                $approver_2nd->user->name,
+                                $pr_header,
+                                $pr_header->attachments
+                                    ->pluck('filepath', 'filename')
+                                    ->toArray()
+                            ));
+                        break;
+                    case 2:
+                        $plant_id   = Plant::where('plant', $pr_header->plant)->value('id');
+                        $recipients = User::whereHas('plants', function ($query) use ($plant_id) {
+                            $query->where('id', $plant_id);
+                        })
+                            ->role(RolesEnum::PORequestor)
+                            ->pluck('email')
+                            ->unique()
+                            ->toArray();
+                        $recipients[] = $approver->user->email;
+                        Mail::to($pr_header->createdBy->email)
+                            ->cc($recipients)
+                            ->send(new PrApprovedEmail(
+                                $pr_header->createdBy->name,
+                                $pr_header,
+                                $pr_header->attachments
+                                    ->pluck('filepath', 'filename')
+                                    ->toArray()
+                            ));
+
+                        break;
+                    case 3:
+                    if ($approver) {
+                            Mail::to($pr_header->createdBy->email)
+                                ->send(new PrRejectedReworkEmail(
+                                    $pr_header->createdBy->name,
+                                    $approver->user->email,
+                                    $pr_header
+                            ));
+                        } else {
+                            Mail::to($pr_header->createdBy->email)
+                                ->send(new PrRejectedReworkEmail(
+                                    $pr_header->createdBy->name,
+                                    Auth::user()->email, // Buyer Planner email instead of approver
+                                    $pr_header
+                                ));
+                        }
+                        break;
+                    default:
+                        // code...
+                        break;
+                }
+            });
+             
+            return to_route('pr.index')->with(
+                'success',
+                sprintf('PR %s is %s', $request->input('pr_number'), Str::ucfirst($request->input('type')))
+            );
+        } catch (\Exception $exception) {
+            Log::error('PR Approval Error: '.$exception->getMessage(), [
+                'pr_number' => $request->input('pr_number'),
+                'user_id'   => Auth::id(),
+            ]);
+
+            return to_route('pr.index')->with(
+                'warning',
+                $exception->getMessage(),
+            );
         }
-
-        $pr_header->save();
-        $approver_status = ApproveStatus::where('seq', $approver->seq)
-            ->where('pr_number', $pr_header->pr_number)
-            ->whereNull('user_id')
-            ->first();
-        $approver_status->status        = Str::ucfirst($request->input('type'));
-        $approver_status->approved_by   = Auth::user()->name;
-        $approver_status->user_id       = Auth::user()->id;
-        $approver_status->message       = $request->input('message');
-        $approver_status->approved_date = now();
-        $approver_status->save();
-
-        $pr_header->load('workflows');
-        /**
-         * Send email notification
-         */
-        switch ($email_status) {
-            case 1:
-                Mail::to($approver_2nd->user->email)
-                    ->send(new PrForApprovalEmail(
-                        $approver_2nd->user->name,
-                        $pr_header,
-                        $pr_header->attachments
-                            ->pluck('filepath', 'filename')
-                            ->toArray()
-                    ));
-                break;
-            case 2:
-                $plant_id   = Plant::where('plant', $pr_header->plant)->value('id');
-                $recipients = User::whereHas('plants', function ($query) use ($plant_id) {
-                    $query->where('id', $plant_id);
-                })
-                    ->role(RolesEnum::PORequestor)
-                    ->pluck('email')
-                    ->unique()
-                    ->toArray();
-                $recipients[] = $approver->user->email;
-                Mail::to($pr_header->createdBy->email)
-                    ->cc($recipients)
-                    ->send(new PrApprovedEmail(
-                        $pr_header->createdBy->name,
-                        $pr_header,
-                        $pr_header->attachments
-                            ->pluck('filepath', 'filename')
-                            ->toArray()
-                    ));
-
-                break;
-            case 3:
-                Mail::to($pr_header->createdBy->email)
-                    ->send(new PrRejectedReworkEmail(
-                        $pr_header->createdBy->name,
-                        $approver->user->email,
-                        $pr_header
-                    ));
-                break;
-            default:
-                // code...
-                break;
-        }
-
-        return to_route('pr.index')->with(
-            'success',
-            sprintf('PR %s is %s', $pr_header->pr_number, Str::ucfirst($request->input('type')))
-        );
     }
 
     public function discard($id)

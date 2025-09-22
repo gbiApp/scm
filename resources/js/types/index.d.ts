@@ -279,6 +279,7 @@ export interface IPRMaterial {
 export interface IMessage {
   success: string | undefined;
   error: string | undefined;
+  warning: string | undefined;
 }
 
 export interface IWorkflow {
