@@ -80,6 +80,7 @@ const Edit = ({
   const [files, setFiles] = useState([]);
   const [isMaterialRefreshing, setIsMaterialRefreshing] = useState(false);
   const isBuyerPlanner = can(auth.user, PermissionsEnum.ReworkPROnPO);
+
   const approverGrpId = auth.user.approvers
     .filter((approver) => approver.type === 'pr')
     .map((approver) => approver.plant + approver.seq + approver.prctrl_grp_id);
