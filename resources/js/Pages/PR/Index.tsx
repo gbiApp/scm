@@ -34,7 +34,13 @@ export default function Index({
         title: message.success,
       });
     }
-  }, []);
+    if (message?.warning) {
+      toast({
+        title: message.warning,
+        variant: 'warning',
+      });
+    }
+  }, [message]);
 
   useEffect(() => {
     if (selectedPR) {

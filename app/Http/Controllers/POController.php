@@ -90,7 +90,7 @@ class POController extends Controller
         return Inertia::render('PO/Index', [
             'po_header'     => POHeaderResource::collection($poHeader),
             'queryParams'   => $request->query() ?: null,
-            'message'       => ['success' => session('success'), 'error' => session('error')],
+            'message'       => ['success' => session('success'), 'error' => session('error') , 'warning' => session('warning')],
             'vendorsChoice' => Vendor::getVendorsChoice(),
         ]);
     }
@@ -412,120 +412,141 @@ class POController extends Controller
 
     public function approve(Request $request)
     {
-        $po_header = PoHeader::with([
-            'pomaterials.prmaterials',
-            'pomaterials' => fn ($query) => $query->whereNull('status')->orWhere('status', ''),
-            'plants',
-            'vendors',
-            'workflows',
-            'attachments',
-            'pomaterials.materialGroups',
-        ])->where('po_number', $request->input('po_number'))
-            ->first();
-
-        $approver = Approvers::where('user_id', Auth::user()->id)
-            ->where('plant', $po_header->plant)
-            ->where('type', Approvers::TYPE_PO)->first();
-        $email_status = 0;
-        if ($request->input('type') == ApproveStatus::APPROVED) {
-            if ($po_header->total_po_value > $approver->amount_to) {
-                $po_header->appr_seq += 1;
-                $approver_2nd = Approvers::where('seq', $po_header->appr_seq)
+        try {
+            DB::transaction(function () use ($request) {
+                $po_header = PoHeader::with([
+                    'pomaterials.prmaterials',
+                    'pomaterials' => fn ($query) => $query->whereNull('status')->orWhere('status', ''),
+                    'plants',
+                    'vendors',
+                    'workflows',
+                    'attachments',
+                    'pomaterials.materialGroups',
+                ])->where('po_number', $request->input('po_number')) 
+                    ->first();
+ 
+                $approver = Approvers::where('user_id', Auth::user()->id)
                     ->where('plant', $po_header->plant)
-                    ->where('type', Approvers::TYPE_PO)->first();
-                $po_header->status = $approver_2nd->desc;
-                $po_header->seq    = HeaderSeq::ForApproval->value;
-                $email_status      = 1;
-            } elseif ($po_header->total_po_value <= $approver->amount_to) {
-                $po_header->status       = ApproveStatus::APPROVED;
-                $po_header->release_date = Carbon::now()->format('Y-m-d H:i:s');
-                $po_header->seq          = HeaderSeq::Approved->value;
-                $this->_updateNetPrice($po_header);
-                $email_status = 2;
-            }
-        } else {
-            $po_header->status   = Str::ucfirst($request->input('type'));
-            $po_header->appr_seq = $request->input('type') == ApproveStatus::REWORKED ? HeaderSeq::Draft->value : HeaderSeq::Rejected->value;
-            $po_header->seq      = $request->input('type') == ApproveStatus::REWORKED ? HeaderSeq::Draft->value : HeaderSeq::Cancelled->value;
-            $approver_status     = ApproveStatus::where('seq', '!=', $approver->seq)
-                ->where('po_number', operator: $po_header->po_number)
-                ->whereNull('user_id')
-                ->delete();
+                    ->where('type', Approvers::TYPE_PO)
+                    ->first();
 
-            if ($request->input('type') == ApproveStatus::REJECTED) {
-                foreach ($po_header->pomaterials as $pomaterial) {
-                    $pomaterial->status = PoMaterial::FLAG_DELETE;
-                    $pomaterial->save();
-                    // update open and order qty in pr
-                    $this->_updatePrMaterial($pomaterial, 0, CrudActionEnum::DELETE);
+                $email_status = 0;
+                if ($request->input('type') == ApproveStatus::APPROVED) {
+                    if ($po_header->total_po_value > $approver->amount_to) {
+                        $po_header->appr_seq += 1;
+                        $approver_2nd = Approvers::where('seq', $po_header->appr_seq)
+                            ->where('plant', $po_header->plant)
+                            ->where('type', Approvers::TYPE_PO)->first();
+                        $po_header->status = $approver_2nd->desc;
+                        $po_header->seq    = HeaderSeq::ForApproval->value;
+                        $email_status      = 1;
+                    } elseif ($po_header->total_po_value <= $approver->amount_to) {
+                        $po_header->status       = ApproveStatus::APPROVED;
+                        $po_header->release_date = Carbon::now()->format('Y-m-d H:i:s');
+                        $po_header->seq          = HeaderSeq::Approved->value;
+                        $this->_updateNetPrice($po_header);
+                        $email_status = 2;
+                    }
+                } else {
+                    $po_header->status   = Str::ucfirst($request->input('type'));
+                    $po_header->appr_seq = $request->input('type') == ApproveStatus::REWORKED ? HeaderSeq::Draft->value : HeaderSeq::Rejected->value;
+                    $po_header->seq      = $request->input('type') == ApproveStatus::REWORKED ? HeaderSeq::Draft->value : HeaderSeq::Cancelled->value;
+                    $approver_status     = ApproveStatus::where('seq', '!=', $approver->seq)
+                        ->where('po_number', $po_header->po_number)
+                        ->whereNull('user_id')
+                        ->delete();
+
+                    if ($request->input('type') == ApproveStatus::REJECTED) {
+                        foreach ($po_header->pomaterials as $pomaterial) {
+                            $pomaterial->status = PoMaterial::FLAG_DELETE;
+                            $pomaterial->save();
+                            $this->_updatePrMaterial($pomaterial, 0, CrudActionEnum::DELETE);
+                        }
+                    }
+                    $email_status = 3;
+                } 
+
+                $po_header->save();
+
+                $approver_status = ApproveStatus::where('seq', $approver->seq)
+                    ->where('po_number', $po_header->po_number)
+                    ->whereNull('user_id')
+                    ->first();
+
+                if (! $approver_status) {
+                    throw new \Exception(sprintf(
+                        "PO %s has already been %s.",
+                        $po_header->po_number,
+                        Str::ucfirst($request->input('type'))
+                    ));
                 }
-            }
-            $email_status = 3;
+
+                $approver_status->status        = Str::ucfirst($request->input('type'));
+                $approver_status->approved_by   = Auth::user()->name;
+                $approver_status->user_id       = Auth::user()->id;
+                $approver_status->message       = $request->message;
+                $approver_status->approved_date = now();
+                $approver_status->save();
+
+                $po_header->load('workflows');
+
+                switch ($email_status) {
+                    case 1:
+                        Mail::to($approver_2nd->user->email)
+                            ->send(new PoForApprovalEmail(
+                                $approver_2nd->user->name,
+                                $po_header,
+                                $po_header->attachments
+                                    ->pluck('filepath', 'filename')
+                                    ->toArray()
+                            ));
+                        break;
+                    case 2:
+                        $finance = User::whereHas(
+                            'deliveryAddress',
+                            fn ($query) => $query->where('address', $po_header->deliv_addr)
+                                ->where('plant', $po_header->plant)
+                        )->pluck('email')->toArray();
+
+                        $approved_cc = [$approver->user->email, ...$finance];
+                        Mail::to($po_header->createdBy->email)
+                            ->cc($approved_cc)
+                            ->send(new PoApprovedEmail(
+                                $po_header->createdBy->name,
+                                $po_header,
+                                $po_header->attachments
+                                    ->pluck('filepath', 'filename')
+                                    ->toArray()
+                            ));
+                        break;
+                    case 3:
+                        Mail::to($po_header->createdBy->email)
+                            ->send(new PoRejectedReworkEmail(
+                                $po_header->createdBy->name,
+                                $approver->user->email,
+                                $po_header
+                            ));
+                        break;
+                    default:
+                        break;
+                }
+            });
+
+            return to_route('po.index')->with(
+                'success',
+                sprintf('PO %s is %s', $request->input('po_number'), Str::ucfirst($request->input('type')))
+            );
+        } catch (\Exception $exception) {
+            Log::error('PO Approval Error: '.$exception->getMessage(), [
+                'po_number' => $request->input('po_number'),
+                'user_id'   => Auth::id(),
+            ]);
+
+            return to_route('po.index')->with(
+                'warning',
+                $exception->getMessage(),
+            );
         }
-
-        $po_header->save();
-
-        $approver_status = ApproveStatus::where('seq', $approver->seq)
-            ->where('po_number', $po_header->po_number)
-            ->whereNull('user_id')
-            ->first();
-
-        $approver_status->status        = Str::ucfirst($request->input('type'));
-        $approver_status->approved_by   = Auth::user()->name;
-        $approver_status->user_id       = Auth::user()->id;
-        $approver_status->message       = $request->message;
-        $approver_status->approved_date = now();
-        $approver_status->save();
-
-        $po_header->load('workflows');
-        /**
-         * Send email notification
-         */
-        switch ($email_status) {
-            case 1:
-                Mail::to($approver_2nd->user->email)
-                    ->send(new PoForApprovalEmail(
-                        $approver_2nd->user->name,
-                        $po_header,
-                        $po_header->attachments
-                            ->pluck('filepath', 'filename')
-                            ->toArray()
-                    ));
-                break;
-            case 2:
-                $finance = User::whereHas(
-                    'deliveryAddress',
-                    fn ($query) => $query->where('address', $po_header->deliv_addr)
-                        ->where('plant', $po_header->plant)
-                )->pluck('email')->toArray();
-
-                $approved_cc = [$approver->user->email, ...$finance];
-                Mail::to($po_header->createdBy->email)
-                    ->cc($approved_cc)
-                    ->send(new PoApprovedEmail(
-                        $po_header->createdBy->name,
-                        $po_header,
-                        $po_header->attachments
-                            ->pluck('filepath', 'filename')
-                            ->toArray()
-                    ));
-                break;
-            case 3:
-                Mail::to($po_header->createdBy->email)
-                    ->send(new PoRejectedReworkEmail(
-                        $po_header->createdBy->name,
-                        $approver->user->email,
-                        $po_header
-                    ));
-                break;
-            default:
-                break;
-        }
-
-        return to_route('po.index')->with(
-            'success',
-            sprintf('PO %s is %s', $po_header->po_number, Str::ucfirst($request->input('type')))
-        );
     }
 
     public function getApprovedPr(Request $request)
