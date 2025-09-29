@@ -1,68 +1,60 @@
-name: "CodeQL SAST and SOOS Ingestion"
+name: Code Quality and Security Analysis
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
-  schedule:
-    - cron: '30 1 * * 0'
+    branches: [ main ]
 
-permissions:
-  contents: read
-  security-events: write 
-
-jobs: 
-  analyze: 
-    name: CodeQL and SOOS SAST Analysis
+jobs:
+  analysis:
+    name: Run Codacy, CodeQL, and SOOS Scans
     runs-on: ubuntu-latest
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        # CRITICAL: Change 'javascript' to your language if it's different
-        language: [ 'javascript' ] 
 
     steps:
-      - name: 📦 Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 
-          
-      # 1. Initialize CodeQL
-      - name: 🏗️ Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: ${{ matrix.language }}
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      # 2. Autobuild (Only needed for compiled languages)
-      - name: ⚙️ Autobuild
-        uses: github/codeql-action/autobuild@v3
+      # Codacy Static Analysis
+      - name: Run Codacy Analysis CLI
+        uses: codacy/codacy-analysis-cli-action@master
+        env:
+          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
 
-      # 3. Perform CodeQL Analysis and Save SARIF
-      - name: 🔍 Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+      # CodeQL Setup
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
         with:
-          # This saves the SARIF file(s) into the 'codeql-results' directory
-          output: codeql-results 
-          
-      # ----------------------------------------------------------------------------------
-      # FIX 1 (Conflict Resolution): Copy SARIF file for SOOS
-      # We use 'cp' to create a .sarif.json copy, preserving the original .sarif for GitHub upload.
-      # ----------------------------------------------------------------------------------
-      - name: 🔄 Copy CodeQL SARIF for SOOS Ingestion
-        id: copy_sarif
+          languages: javascript
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+      # Prepare CodeQL SARIF for SOOS or other tools
+      - name: Prepare CodeQL SARIF for SOOS
         run: |
-          CODEQL_LANG_SARIF="codeql-results/${{ matrix.language }}.sarif"
-          SOOS_REQUIRED_JSON="codeql-results/${{ matrix.language }}.sarif.json"
-          
+          CODEQL_LANG_SARIF="codeql-results/javascript.sarif"
+          SOOS_REQUIRED_JSON="codeql-results/javascript.sarif.json"
+
           echo "Checking for CodeQL SARIF at: $CODEQL_LANG_SARIF"
-          
+
           if [ -f "$CODEQL_LANG_SARIF" ]; then
-            # Use 'cp' (copy)
             cp "$CODEQL_LANG_SARIF" "$SOOS_REQUIRED_JSON"
             echo "Successfully copied to $SOOS_REQUIRED_JSON for SOOS."
           else
             echo "CRITICAL ERROR: CodeQL SARIF file NOT FOUND at $CODEQL_LANG_SARIF."
-            echo "
+            exit 1
+          fi
+
+      # SOOS SCA Scan (no SBOM export to avoid license error)
+      - name: Run SOOS SCA Scan
+        uses: soos-io/soos-sca-github-action@v2
+        with:
+          project_name: "${{ github.repository }}"
+          client_id: ${{ secrets.SOOS_CLIENT_ID }}
+          api_key: ${{ secrets.SOOS_API_KEY }}
+          log_level: "INFO"
+          on_failure: "continue_on_failure"
