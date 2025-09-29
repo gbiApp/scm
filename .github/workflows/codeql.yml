@@ -1,6 +1,5 @@
 name: "CodeQL SAST and SOOS Ingestion"
 
-# Controls when the workflow will run
 on:
   push:
     branches: [ "main", "master" ]
@@ -12,7 +11,7 @@ on:
 
 permissions:
   contents: read
-  security-events: write # Required for CodeQL analysis and SARIF upload
+  security-events: write 
 
 jobs: 
   analyze: 
@@ -22,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # CRITICAL: Change 'javascript' to your language if it's different (e.g., 'python', 'go', 'java')
+        # CRITICAL: Change 'javascript' to your language if it's different
         language: [ 'javascript' ] 
 
     steps:
@@ -45,49 +44,25 @@ jobs:
       - name: 🔍 Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          # This saves the SARIF file(s) into the 'codeql-results' directory as <language>.sarif
+          # This saves the SARIF file(s) into the 'codeql-results' directory
           output: codeql-results 
           
       # ----------------------------------------------------------------------------------
-      # FIX 1: Copy SARIF file for SOOS (preserves the original .sarif for GitHub upload)
+      # FIX 1 (Conflict Resolution): Copy SARIF file for SOOS
+      # We use 'cp' to create a .sarif.json copy, preserving the original .sarif for GitHub upload.
       # ----------------------------------------------------------------------------------
-      - name: 🔄 Copy and Rename CodeQL SARIF for SOOS Ingestion
+      - name: 🔄 Copy CodeQL SARIF for SOOS Ingestion
         id: copy_sarif
         run: |
-          CODEQL_LANG="${{ matrix.language }}"
-          CODEQL_SARIF_FILE="codeql-results/$CODEQL_LANG.sarif"
-          SOOS_REQUIRED_FILE="codeql-results/$CODEQL_LANG.sarif.json"
+          CODEQL_LANG_SARIF="codeql-results/${{ matrix.language }}.sarif"
+          SOOS_REQUIRED_JSON="codeql-results/${{ matrix.language }}.sarif.json"
           
-          if [ -f "$CODEQL_SARIF_FILE" ]; then
-            # Use 'cp' (copy) to create the new file required by SOOS
-            cp "$CODEQL_SARIF_FILE" "$SOOS_REQUIRED_FILE"
-            echo "Successfully copied $CODEQL_SARIF_FILE to $SOOS_REQUIRED_FILE for SOOS."
+          echo "Checking for CodeQL SARIF at: $CODEQL_LANG_SARIF"
+          
+          if [ -f "$CODEQL_LANG_SARIF" ]; then
+            # Use 'cp' (copy)
+            cp "$CODEQL_LANG_SARIF" "$SOOS_REQUIRED_JSON"
+            echo "Successfully copied to $SOOS_REQUIRED_JSON for SOOS."
           else
-            echo "Error: CodeQL SARIF file not found at $CODEQL_SARIF_FILE. Cannot proceed with SOOS ingestion."
-            exit 1
-          fi
-
-      # ----------------------------------------------------
-      # Upload the renamed SARIF copy to SOOS
-      # ----------------------------------------------------
-      - name: ⬆️ Upload CodeQL SARIF to SOOS
-        if: always() 
-        uses: soos-io/soos-sast-github-action@v1 
-        with:
-          client_id: ${{ secrets.SOOS_CLIENT_ID }}
-          api_key: ${{ secrets.SOOS_API_KEY }}
-          project_name: ${{ github.repository }} 
-          build_version: ${{ github.sha }}
-          # CRITICAL: Use the specific, renamed file path
-          scan_file: codeql-results/${{ matrix.language }}.sarif.json 
-          scan_type: SARIF 
-          
-      # ----------------------------------------------------------------------------------
-      # Upload the ORIGINAL SARIF to GitHub (This step now succeeds as the file is present)
-      # ----------------------------------------------------------------------------------
-      - name: 📦 Upload CodeQL SARIF to GitHub
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          # This still points to the original .sarif file, which was preserved by the 'cp' command
-          sarif_file: codeql-results/*.sarif
+            echo "CRITICAL ERROR: CodeQL SARIF file NOT FOUND at $CODEQL_LANG_SARIF."
+            echo "
