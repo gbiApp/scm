@@ -1,22 +1,69 @@
-# ... (Before this, you have: checkout, init, autobuild)
+name: "CodeQL SAST and SOOS Ingestion"
+
+# Controls when the workflow will run
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  # Optional: Allows manual run from the Actions tab
+  workflow_dispatch:
+  # Optional: Schedule a weekly scan (e.g., every Sunday at 1:30 AM UTC)
+  schedule:
+    - cron: '30 1 * * 0'
+
+permissions:
+  contents: read
+  security-events: write # Required for CodeQL analysis and SOOS upload
+
+# The 'jobs' section is mandatory, fixing the YAML structure error
+jobs: 
+  analyze: 
+    name: CodeQL and SOOS SAST Analysis
+    runs-on: ubuntu-latest
+    
+    # Use a matrix for languages if you have more than one. 
+    # For simplicity, we use a single language here.
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript' ] # <-- Change this to your main language
 
     steps:
-      # ... (Steps 1 & 2: checkout, init, autobuild remain the same)
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch depth 0 is recommended for full history analysis
+          fetch-depth: 0 
+          
+      # 1. Initialize CodeQL
+      - name: 🏗️ Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
 
-      # 3. Perform CodeQL Analysis and Save SARIF (NO CHANGES HERE)
+      # 2. Autobuild (Only needed for compiled languages like Java, C#, Go, etc.)
+      - name: ⚙️ Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      # 3. Perform CodeQL Analysis and Save SARIF
       - name: 🔍 Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
+        id: codeql_analysis
         with:
-          # This saves the file as codeql-results/<language>.sarif
+          # This saves the SARIF file(s) into the 'codeql-results' directory
           output: codeql-results 
           
-      # --- START OF CRITICAL FIX ---
-
-      - name: 🔄 Rename CodeQL SARIF for SOOS Ingestion (FIX FOR ERROR 1)
-        # Assuming JavaScript is your language. CHANGE THIS if you use another language.
+      # ----------------------------------------------------
+      # FIX 1: Rename SARIF file for SOOS compatibility (SOOS requires .sarif.json)
+      # ----------------------------------------------------
+      - name: 🔄 Rename CodeQL SARIF for SOOS Ingestion
+        id: rename_sarif
+        # CRITICAL: Change 'javascript' to your language if needed.
         run: |
-          CODEQL_SARIF_FILE="codeql-results/javascript.sarif"
-          SOOS_REQUIRED_FILE="codeql-results/javascript.sarif.json"
+          CODEQL_LANG="${{ matrix.language }}"
+          CODEQL_SARIF_FILE="codeql-results/$CODEQL_LANG.sarif"
+          SOOS_REQUIRED_FILE="codeql-results/$CODEQL_LANG.sarif.json"
           
           if [ -f "$CODEQL_SARIF_FILE" ]; then
             mv "$CODEQL_SARIF_FILE" "$SOOS_REQUIRED_FILE"
@@ -25,24 +72,25 @@
             echo "Warning: CodeQL SARIF file not found at $CODEQL_SARIF_FILE. Skipping rename."
           fi
 
-      - name: ⬆️ Upload CodeQL SARIF to SOOS (FIX FOR ERROR 2)
-        if: always() # Run this step regardless of prior success/failure
-        uses: soos-io/soos-sast-github-action@v1 # Check SOOS documentation for latest version
+      # ----------------------------------------------------
+      # FIX 2: Upload the renamed SARIF to SOOS
+      # ----------------------------------------------------
+      - name: ⬆️ Upload CodeQL SARIF to SOOS
+        # Run this step even if CodeQL finds issues (CodeQL action might exit with failure)
+        if: always() 
+        uses: soos-io/soos-sast-github-action@v1 
         with:
           client_id: ${{ secrets.SOOS_CLIENT_ID }}
           api_key: ${{ secrets.SOOS_API_KEY }}
           project_name: ${{ github.repository }} 
           build_version: ${{ github.sha }}
-          # 🚨 CRITICAL: Use the specific, renamed file path
-          scan_file: codeql-results/javascript.sarif.json 
+          # CRITICAL: Use the specific, renamed file path
+          scan_file: codeql-results/${{ matrix.language }}.sarif.json 
           scan_type: SARIF 
           
-      # --- END OF CRITICAL FIX ---
-
-      # 4. Upload SARIF to GitHub Security Tab (REQUIRED FOR GITHUB UI)
-      # This step should remain as it handles the CodeQL UI view.
+      # 4. Upload SARIF to GitHub Security Tab (Keeps findings visible in GitHub UI)
       - name: 📦 Upload CodeQL SARIF to GitHub
-        uses: github/codeql-action/upload-sarif@v3
         if: always()
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: codeql-results/*.sarif
