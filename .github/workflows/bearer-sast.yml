@@ -1,0 +1,58 @@
+name: Bearer SAST to SOOS Integration
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  sast_scan:
+    name: Run Bearer SAST and Upload to SOOS
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🛡️ Run Bearer SAST and Generate SARIF
+        uses: bearer/bearer-action@v2
+        continue-on-error: true
+        id: bearer_scan
+        with:
+          format: sarif
+          output: results.sarif.json
+          diff: ${{ github.event_name == 'pull_request' }}
+          hide-progress-bar: true
+          path: .
+
+      - name: 🧪 Debug SARIF Output
+        run: |
+          ls -l results.sarif.json || echo "SARIF file not found"
+          cat results.sarif.json || echo "SARIF file is empty"
+        if: always()
+
+      - name: ⬆️ Upload Bearer Results to SOOS
+        uses: soos-io/soos-sast-github-action@v1
+        if: always()
+        with:
+          client_id: ${{ secrets.SOOS_CLIENT_ID }}
+          api_key: ${{ secrets.SOOS_API_KEY }}
+          project_name: ${{ github.repository }}
+          build_version: ${{ github.sha }}
+          scan_file: results.sarif.json
+          scan_type: SARIF
+
+      - name: 📦 Upload Bearer SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif.json
