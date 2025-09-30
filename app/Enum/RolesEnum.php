@@ -14,4 +14,5 @@ enum RolesEnum: string
     case PRViewer    = 'PR Viewer';
     case POViewer    = 'PO Viewer';
     case GRViewer    = 'GR Viewer';
+    case BuyerPlanner = 'Buyer Planner';
 }

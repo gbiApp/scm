@@ -147,4 +147,5 @@ export enum PermissionsEnum {
   ApproverGR = 'approver.gr',
   CancelGR = 'cancel.gr',
   Admin = 'admin',
+  ReworkPROnPO = 'rework.pr.on.po',
 }
