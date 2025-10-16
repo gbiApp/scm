@@ -56,14 +56,16 @@ export default function Edit({ p_plants, p_material }) {
 
     try {
       const response = await window.axios.get(route('altuom.search', { search: inputValue }));
-      console.log(response.data.data);
 
       const m_altuom = response.data.data.map((item) => ({ value: item.alt_uom, label: item.alt_uom }));
 
       setAltUom(m_altuom);
-    } catch (e) {
-      console.log('Error fetching data:', e);
-      // return [];
+    }  catch (e : any) {
+       console.warn('NetPrice fetch failed:', {
+          message: e?.message,
+          status: e?.response?.status,
+          url: e?.config?.url,
+        });
     }
   };
 

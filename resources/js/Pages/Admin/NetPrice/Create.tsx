@@ -53,8 +53,12 @@ export default function Create({ p_plants }) {
       const m_altuom = response.data.data.map((item) => ({ value: item.alt_uom, label: item.alt_uom }));
 
       setAltUom(m_altuom);
-    } catch (e) {
-      console.log('Error fetching data:', e);
+    } catch (e : any) {
+       console.warn('NetPrice fetch failed:', {
+          message: e?.message,
+          status: e?.response?.status,
+          url: e?.config?.url,
+        });
     }
   };
 

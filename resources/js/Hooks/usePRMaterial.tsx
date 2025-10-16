@@ -18,7 +18,6 @@ export default function usePRMaterial() {
       } catch (error) {
         // Log using a constant message and an object payload to avoid
         // any format-string injection issues detected by static scanners.
-        console.error('Error fetching material info', { material, error });
         materialCache[cacheKey] = null;
       }
     }

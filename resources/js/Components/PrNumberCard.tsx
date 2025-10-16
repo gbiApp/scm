@@ -41,7 +41,6 @@ export default function PrNumberCard({
     } else {
       setShowModal(false);
     }
-    console.log('Selected attachments:', selected);
     return selected;
   };
   const fetchPrDetails = async () => {

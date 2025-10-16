@@ -10,8 +10,12 @@ export const fetchUom = async (inputValue: string) => {
       value: uom.uom,
       label: `${uom.uom} - ${uom.uom_text}`,
     }));
-  } catch (e) {
-    console.log('Error fetching data:', e);
+  } catch (e: any) {
+      console.warn('UOM fetch failed:', {
+        message: e?.message,
+        status: e?.response?.status,
+        url: e?.config?.url,
+      });
     return [];
   }
 };

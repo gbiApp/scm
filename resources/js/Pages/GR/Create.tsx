@@ -152,8 +152,12 @@ const Create = ({ auth }: PageProps) => {
       });
 
       setMaterial(updateMaterial);
-    } catch (error) {
-      console.log('Error fetching po info: ', error);
+    }  catch (e : any) {
+       console.warn('Error fetching data:', {
+          message: e?.message,
+          status: e?.response?.status,
+          url: e?.config?.url,
+        });
     }
   };
 
@@ -167,9 +171,12 @@ const Create = ({ auth }: PageProps) => {
         value: item.po_number,
         label: `${item.control_no} | ${item.po_number}`,
       }));
-    } catch (e) {
-      console.log('Error fetching data:', e);
-      return [];
+    }  catch (e : any) {
+       console.warn('Error fetching data:', {
+          message: e?.message,
+          status: e?.response?.status,
+          url: e?.config?.url,
+        });
     }
   };
 

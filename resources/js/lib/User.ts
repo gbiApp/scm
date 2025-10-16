@@ -11,8 +11,12 @@ export const fetchUser = async (inputValue: string) => {
       label: item.name,
       position: item.position,
     }));
-  } catch (e) {
-    console.log('Error fetching data:', e);
+  } catch (e : any) {
+      console.warn('Users fetch failed:', {
+        message: e?.message,
+        status: e?.response?.status,
+        url: e?.config?.url,
+      });
     return [];
   }
 };

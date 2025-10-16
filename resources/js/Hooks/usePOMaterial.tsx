@@ -110,7 +110,6 @@ export default function usePOMaterial() {
       const response = await window.axios.get(route('po.vendor', vendorId));
       return response.data.data;
     } catch (error) {
-      console.log('Error fetching vendor info: ', error);
       return undefined;
     }
   };

@@ -9,8 +9,12 @@ export const fetchVendor = async (inputValue: string) => {
       value: vendor.supplier,
       label: `${vendor.supplier} - ${vendor.name_1}`,
     }));
-  } catch (e) {
-    console.log('Error fetching data:', e);
+  } catch (e : any) {
+      console.warn('Vendor fetch failed:', {
+        message: e?.message,
+        status: e?.response?.status,
+        url: e?.config?.url,
+      });
     return [];
   }
 };
