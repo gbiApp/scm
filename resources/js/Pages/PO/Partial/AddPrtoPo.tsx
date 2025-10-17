@@ -48,13 +48,8 @@ export default function AddPrtoPo({ p_plant, p_doc_date, addToPO }) {
         params: { plant: p_plant, doc_date: p_doc_date },
       });
       setPrMaterialList(response.data.data);
-    } catch (e : any) {
-      // SOOS: ignore javascript_lang_logger_leak - no logging occurs here
-      console.warn('Error fetching failed:', {
-            message: e?.message,
-            status: e?.response?.status,
-            url: e?.config?.url,
-          });
+    } catch (e) {
+      console.warn('Error fetching failed:');
     }
   }, [p_plant, p_doc_date]);
 
