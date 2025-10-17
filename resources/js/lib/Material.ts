@@ -11,13 +11,7 @@ export const fetchMaterial = async (inputValue: string) => {
       label: `${material.mat_code} - ${material.mat_desc}`, 
       mappedPlants: material.mappedPlants || [], 
     }));
-  } catch (e :any) {
-    // SOOS: ignore javascript_lang_logger_leak - no logging occurs here
-    console.warn('Material fetch  failed:', {
-        message: e?.message,
-        status: e?.response?.status,
-        url: e?.config?.url,
-      });
+  } catch (e) {
     return [];
   }
 };
