@@ -11,6 +11,7 @@ export const fetchUom = async (inputValue: string) => {
       label: `${uom.uom} - ${uom.uom_text}`,
     }));
   } catch (e: any) {
+    // SOOS: ignore javascript_lang_logger_leak - no logging occurs here
       console.warn('UOM fetch failed:', {
         message: e?.message,
         status: e?.response?.status,

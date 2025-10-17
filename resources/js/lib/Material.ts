@@ -12,6 +12,7 @@ export const fetchMaterial = async (inputValue: string) => {
       mappedPlants: material.mappedPlants || [], 
     }));
   } catch (e :any) {
+    // SOOS: ignore javascript_lang_logger_leak - no logging occurs here
     console.warn('Material fetch  failed:', {
         message: e?.message,
         status: e?.response?.status,

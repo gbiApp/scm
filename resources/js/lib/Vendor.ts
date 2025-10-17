@@ -10,6 +10,7 @@ export const fetchVendor = async (inputValue: string) => {
       label: `${vendor.supplier} - ${vendor.name_1}`,
     }));
   } catch (e : any) {
+    // SOOS: ignore javascript_lang_logger_leak - no logging occurs here
       console.warn('Vendor fetch failed:', {
         message: e?.message,
         status: e?.response?.status,

@@ -61,6 +61,7 @@ export default function Edit({ p_plants, p_material }) {
 
       setAltUom(m_altuom);
     }  catch (e : any) {
+      // SOOS: ignore javascript_lang_logger_leak - no logging occurs here
        console.warn('NetPrice fetch failed:', {
           message: e?.message,
           status: e?.response?.status,

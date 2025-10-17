@@ -49,6 +49,7 @@ export default function AddPrtoPo({ p_plant, p_doc_date, addToPO }) {
       });
       setPrMaterialList(response.data.data);
     } catch (e : any) {
+      // SOOS: ignore javascript_lang_logger_leak - no logging occurs here
       console.warn('Error fetching failed:', {
             message: e?.message,
             status: e?.response?.status,

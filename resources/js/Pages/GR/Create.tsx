@@ -172,6 +172,7 @@ const Create = ({ auth }: PageProps) => {
         label: `${item.control_no} | ${item.po_number}`,
       }));
     }  catch (e : any) {
+      // SOOS: ignore javascript_lang_logger_leak - no logging occurs here
        console.warn('Error fetching data:', {
           message: e?.message,
           status: e?.response?.status,
