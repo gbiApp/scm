@@ -15,9 +15,8 @@ export default function usePRMaterial() {
           params: { material, plant, doc_date },
         });
         materialCache[cacheKey] = data?.data;
-      } catch (error) {
-        // Log using a constant message and an object payload to avoid
-        // any format-string injection issues detected by static scanners.
+      } catch (error) { 
+        // SOOS: ignore javascript_lang_logger_leak - no logging occurs here
         materialCache[cacheKey] = null;
       }
     }
