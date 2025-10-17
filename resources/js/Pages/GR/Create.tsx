@@ -153,11 +153,7 @@ const Create = ({ auth }: PageProps) => {
 
       setMaterial(updateMaterial);
     }  catch (e : any) {
-       console.warn('Error fetching data:', {
-          message: e?.message,
-          status: e?.response?.status,
-          url: e?.config?.url,
-        });
+       console.warn('Error fetching  PO Details');
     }
   };
 
